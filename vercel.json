@@ -1,0 +1,13 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "nextjs",
+  "regions": ["hkg1"],
+  "functions": {
+    "app/api/try-on/route.ts": {
+      "maxDuration": 180
+    },
+    "app/api/openclaw/chat/route.ts": {
+      "maxDuration": 60
+    }
+  }
+}
