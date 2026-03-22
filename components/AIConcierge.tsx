@@ -2,8 +2,10 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Send, Loader2, Sparkles, Bot, User, ArrowRight } from 'lucide-react'
+import { X, Send, Loader2, Sparkles, Bot, User, ArrowRight, ExternalLink } from 'lucide-react'
 import Link from 'next/link'
+import Image from 'next/image'
+import { getProductById, Product } from '@/lib/data'
 
 interface Message {
   id: string
@@ -13,6 +15,42 @@ interface Message {
   durationMs?: number
   model?: string
   source?: string
+}
+
+// Extract product IDs from AI reply like [[wt01]], [[mb03]]
+function extractProducts(content: string): Product[] {
+  const ids: string[] = []
+  let match: RegExpExecArray | null
+  const re = /\[\[(\w+)\]\]/g
+  while ((match = re.exec(content)) !== null) ids.push(match[1])
+  const unique = Array.from(new Set(ids))
+  return unique.map(id => getProductById(id)).filter((p): p is Product => !!p)
+}
+
+// Remove [[id]] markers from display text
+function cleanContent(content: string): string {
+  return content.replace(/\[\[(\w+)\]\]/g, '').replace(/  +/g, ' ').trim()
+}
+
+// Mini product card for chat
+function ChatProductCard({ product, onClose }: { product: Product; onClose: () => void }) {
+  return (
+    <Link
+      href={`/products/${product.id}`}
+      onClick={onClose}
+      className="flex items-center gap-2.5 p-2 rounded-lg border border-foreground/8 hover:border-accent/30 hover:bg-accent/3 transition-all group"
+    >
+      <div className="relative w-10 h-13 rounded-md overflow-hidden flex-shrink-0 bg-foreground/5">
+        <Image src={product.images[0]} alt={product.name} fill className="object-cover" sizes="40px" />
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-[10px] text-foreground/30 font-mono uppercase tracking-wider">{product.brand}</p>
+        <p className="text-[11px] font-semibold truncate group-hover:text-accent transition-colors">{product.name}</p>
+        <p className="text-[10px] font-mono font-bold text-accent">£{product.price}</p>
+      </div>
+      <ExternalLink size={10} className="text-foreground/20 group-hover:text-accent transition-colors flex-shrink-0" />
+    </Link>
+  )
 }
 
 export default function AIConcierge() {
@@ -177,8 +215,20 @@ export default function AIConcierge() {
                           ? 'bg-accent text-white rounded-tr-sm'
                           : 'bg-foreground/5 text-foreground rounded-tl-sm'
                       }`}>
-                        <p className="whitespace-pre-wrap">{msg.content}</p>
+                        <p className="whitespace-pre-wrap">{msg.role === 'assistant' ? cleanContent(msg.content) : msg.content}</p>
                       </div>
+                      {/* Product recommendation cards */}
+                      {msg.role === 'assistant' && (() => {
+                        const recommendedProducts = extractProducts(msg.content)
+                        if (recommendedProducts.length === 0) return null
+                        return (
+                          <div className="mt-1.5 space-y-1">
+                            {recommendedProducts.map(p => (
+                              <ChatProductCard key={p.id} product={p} onClose={() => setIsOpen(false)} />
+                            ))}
+                          </div>
+                        )
+                      })()}
                       {msg.role === 'assistant' && (msg.durationMs || msg.model) && (
                         <div className="flex items-center gap-1.5 mt-0.5 px-1 flex-wrap">
                           {msg.model && (
