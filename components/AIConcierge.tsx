@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { X, Send, Loader2, Sparkles, Bot, User, ArrowRight, ExternalLink } from 'lucide-react'
 import Link from 'next/link'
 import Image from 'next/image'
-import { getProductById, Product } from '@/lib/data'
+import { getProductById, products, Product } from '@/lib/data'
 
 interface Message {
   id: string
@@ -17,14 +17,42 @@ interface Message {
   source?: string
 }
 
-// Extract product IDs from AI reply like [[wt01]], [[mb03]]
+// Extract products from AI reply by matching [[id]] markers OR product names
 function extractProducts(content: string): Product[] {
-  const ids: string[] = []
-  let match: RegExpExecArray | null
+  const found: Product[] = []
+  const seenIds = new Set<string>()
+
+  // Strategy 1: Match [[product_id]] markers
   const re = /\[\[(\w+)\]\]/g
-  while ((match = re.exec(content)) !== null) ids.push(match[1])
-  const unique = Array.from(new Set(ids))
-  return unique.map(id => getProductById(id)).filter((p): p is Product => !!p)
+  let match: RegExpExecArray | null
+  while ((match = re.exec(content)) !== null) {
+    const p = getProductById(match[1])
+    if (p && !seenIds.has(p.id)) { found.push(p); seenIds.add(p.id) }
+  }
+
+  // Strategy 2: Match product names in text (fallback when AI doesn't use [[id]])
+  if (found.length === 0) {
+    const lower = content.toLowerCase()
+    for (const p of products) {
+      if (lower.includes(p.name.toLowerCase()) && !seenIds.has(p.id)) {
+        found.push(p)
+        seenIds.add(p.id)
+      }
+    }
+  }
+
+  // Strategy 3: Match product IDs like [wt01] or (wt01) in text
+  if (found.length === 0) {
+    const idRe = /[\[\(](wt|wb|wd|mt|mb)\d{2}[\]\)]/g
+    let idMatch: RegExpExecArray | null
+    while ((idMatch = idRe.exec(content)) !== null) {
+      const id = idMatch[0].replace(/[\[\]\(\)]/g, '')
+      const p = getProductById(id)
+      if (p && !seenIds.has(p.id)) { found.push(p); seenIds.add(p.id) }
+    }
+  }
+
+  return found.slice(0, 4) // Max 4 product cards
 }
 
 // Remove [[id]] markers from display text
