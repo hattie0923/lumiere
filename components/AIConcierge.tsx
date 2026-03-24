@@ -68,7 +68,7 @@ function ChatProductCard({ product, onClose }: { product: Product; onClose: () =
       onClick={onClose}
       className="flex items-center gap-2.5 p-2 rounded-lg border border-foreground/8 hover:border-accent/30 hover:bg-accent/3 transition-all group"
     >
-      <div className="relative w-10 h-13 rounded-md overflow-hidden flex-shrink-0 bg-foreground/5">
+      <div className="relative w-10 h-14 rounded-md overflow-hidden flex-shrink-0 bg-foreground/5">
         <Image src={product.images[0]} alt={product.name} fill className="object-cover" sizes="40px" />
       </div>
       <div className="flex-1 min-w-0">
