@@ -19,6 +19,25 @@ export interface OpenClawHttpResult {
   agentId: string
 }
 
+function extractMessageContent(content: unknown): string {
+  if (typeof content === 'string') return content
+  if (Array.isArray(content)) {
+    return content
+      .map((part) => {
+        if (typeof part === 'string') return part
+        if (part && typeof part === 'object') {
+          const p = part as Record<string, unknown>
+          if (typeof p.text === 'string') return p.text
+          if (typeof p.content === 'string') return p.content
+        }
+        return ''
+      })
+      .join('')
+      .trim()
+  }
+  return ''
+}
+
 export async function callOpenClawHttp(opts: {
   agent?: string
   message: string
@@ -76,7 +95,11 @@ export async function callOpenClawHttp(opts: {
     }
 
     const data = await res.json()
-    const reply = data.choices?.[0]?.message?.content || ''
+    const message = data.choices?.[0]?.message
+    const reply =
+      extractMessageContent(message?.content) ||
+      extractMessageContent(message?.reasoning_content) ||
+      (typeof data.choices?.[0]?.text === 'string' ? data.choices[0].text : '')
     const durationMs = Date.now() - startTime
 
     return {

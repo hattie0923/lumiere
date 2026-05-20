@@ -121,7 +121,13 @@ export async function callKimi(opts: {
   }
 
   const data = await res.json()
-  const reply = data.choices?.[0]?.message?.content || ''
+  const raw = data.choices?.[0]?.message?.content
+  const reply =
+    typeof raw === 'string'
+      ? raw
+      : Array.isArray(raw)
+        ? raw.map((p: { text?: string }) => p?.text ?? '').join('')
+        : ''
   const durationMs = Date.now() - startTime
 
   return {

@@ -60,6 +60,14 @@ function cleanContent(content: string): string {
   return content.replace(/\[\[(\w+)\]\]/g, '').replace(/  +/g, ' ').trim()
 }
 
+function displayContent(content: string): string {
+  const cleaned = cleanContent(content)
+  if (cleaned) return cleaned
+  const raw = (content || '').trim()
+  if (raw) return raw
+  return ''
+}
+
 // Mini product card for chat
 function ChatProductCard({ product, onClose }: { product: Product; onClose: () => void }) {
   return (
@@ -95,13 +103,20 @@ export default function AIConcierge() {
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const lastMessageRef = useRef<HTMLDivElement>(null)
+  const messagesRef = useRef(messages)
   const inputRef = useRef<HTMLInputElement>(null)
 
+  messagesRef.current = messages
+
+  // Align latest message to top of viewport — scrollHeight hides long reply text
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
-    }
-  }, [messages])
+    const el = lastMessageRef.current
+    if (!el) return
+    requestAnimationFrame(() => {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
+  }, [messages, isLoading])
 
   useEffect(() => {
     if (isOpen && inputRef.current) {
@@ -120,16 +135,16 @@ export default function AIConcierge() {
       timestamp: new Date(),
     }
 
+    const history = messagesRef.current
+      .filter(m => m.id !== 'welcome')
+      .map(m => ({ role: m.role, content: m.content }))
+
     setMessages(prev => [...prev, userMsg])
+    messagesRef.current = [...messagesRef.current, userMsg]
     setInput('')
     setIsLoading(true)
 
     try {
-      // Build conversation history for context
-      const history = messages
-        .filter(m => m.id !== 'welcome')
-        .map(m => ({ role: m.role, content: m.content }))
-
       const res = await fetch('/api/openclaw/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -141,36 +156,53 @@ export default function AIConcierge() {
       })
 
       const data = await res.json()
+      const reply = typeof data?.data?.reply === 'string' ? data.data.reply.trim() : ''
 
-      if (data.success) {
-        setMessages(prev => [...prev, {
+      if (data.success && reply) {
+        const assistantMsg: Message = {
           id: (Date.now() + 1).toString(),
           role: 'assistant',
-          content: data.data.reply,
+          content: reply,
           timestamp: new Date(),
           durationMs: data.data.durationMs,
           model: data.data.model,
           source: data.data.source,
-        }])
-      } else {
-        setMessages(prev => [...prev, {
+        }
+        setMessages(prev => [...prev, assistantMsg])
+        messagesRef.current = [...messagesRef.current, assistantMsg]
+      } else if (data.success && !reply) {
+        const assistantMsg: Message = {
           id: (Date.now() + 1).toString(),
           role: 'assistant',
-          content: `Sorry, something went wrong: ${data.error}`,
+          content: 'I received your message but got an empty response. Please try again.',
           timestamp: new Date(),
-        }])
+          source: data.data?.source,
+        }
+        setMessages(prev => [...prev, assistantMsg])
+        messagesRef.current = [...messagesRef.current, assistantMsg]
+      } else {
+        const errMsg: Message = {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: `Sorry, something went wrong: ${data.error || 'Unknown error'}`,
+          timestamp: new Date(),
+        }
+        setMessages(prev => [...prev, errMsg])
+        messagesRef.current = [...messagesRef.current, errMsg]
       }
     } catch {
-      setMessages(prev => [...prev, {
+      const errMsg: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
         content: 'Connection error. Please try again.',
         timestamp: new Date(),
-      }])
+      }
+      setMessages(prev => [...prev, errMsg])
+      messagesRef.current = [...messagesRef.current, errMsg]
     } finally {
       setIsLoading(false)
     }
-  }, [input, isLoading, messages])
+  }, [input, isLoading])
 
   return (
     <>
@@ -230,8 +262,16 @@ export default function AIConcierge() {
 
               {/* Messages */}
               <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
-                {messages.map(msg => (
-                  <div key={msg.id} className={`flex gap-2 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
+                {messages.map((msg, index) => {
+                  const text = msg.role === 'assistant' ? displayContent(msg.content) : msg.content
+                  const products = msg.role === 'assistant' ? extractProducts(msg.content) : []
+                  const isLast = index === messages.length - 1 && !isLoading
+                  return (
+                  <div
+                    key={msg.id}
+                    ref={isLast ? lastMessageRef : undefined}
+                    className={`flex gap-2 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}
+                  >
                     <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 ${
                       msg.role === 'assistant' ? 'bg-accent/10' : 'bg-foreground/10'
                     }`}>
@@ -243,20 +283,19 @@ export default function AIConcierge() {
                           ? 'bg-accent text-white rounded-tr-sm'
                           : 'bg-foreground/5 text-foreground rounded-tl-sm'
                       }`}>
-                        <p className="whitespace-pre-wrap">{msg.role === 'assistant' ? cleanContent(msg.content) : msg.content}</p>
+                        {text ? (
+                          <p className="whitespace-pre-wrap">{text}</p>
+                        ) : products.length > 0 ? (
+                          <p className="text-foreground/60">Here are some recommendations for you:</p>
+                        ) : null}
                       </div>
-                      {/* Product recommendation cards */}
-                      {msg.role === 'assistant' && (() => {
-                        const recommendedProducts = extractProducts(msg.content)
-                        if (recommendedProducts.length === 0) return null
-                        return (
+                      {products.length > 0 && (
                           <div className="mt-1.5 space-y-1">
-                            {recommendedProducts.map(p => (
+                            {products.map(p => (
                               <ChatProductCard key={p.id} product={p} onClose={() => setIsOpen(false)} />
                             ))}
                           </div>
-                        )
-                      })()}
+                      )}
                       {msg.role === 'assistant' && (msg.durationMs || msg.model) && (
                         <div className="flex items-center gap-1.5 mt-0.5 px-1 flex-wrap">
                           {msg.model && (
@@ -272,10 +311,11 @@ export default function AIConcierge() {
                       )}
                     </div>
                   </div>
-                ))}
+                  )
+                })}
 
                 {isLoading && (
-                  <div className="flex gap-2">
+                  <div ref={lastMessageRef} className="flex gap-2">
                     <div className="w-6 h-6 rounded-full bg-accent/10 flex items-center justify-center flex-shrink-0">
                       <Bot size={12} className="text-accent" />
                     </div>

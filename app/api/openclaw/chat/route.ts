@@ -31,6 +31,10 @@ export async function POST(req: Request) {
         sessionUser: sessionId || undefined,
       })
 
+      if (!result.reply?.trim()) {
+        throw new Error('OpenClaw Gateway returned empty reply')
+      }
+
       return NextResponse.json({
         success: true,
         data: {
