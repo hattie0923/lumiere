@@ -5,20 +5,11 @@ export const maxDuration = 60
 
 type GarmentType = 'top' | 'bottom' | 'dress' | 'full_outfit'
 
-// Map garment type → FASHN category
-function fashnCategory(type: GarmentType): string {
-  if (type === 'top') return 'tops'
-  if (type === 'bottom') return 'bottoms'
-  return 'one-pieces' // dress, full_outfit
-}
-
-// ─── FASHN VTON v1.5 (identity-preserving virtual try-on) ───
-
-async function runFashn(userImage: string, garmentImage: string, category: string) {
+async function runFashn(userImage: string, garmentImage: string) {
   const FASHN_API_KEY = process.env.FASHN_API_KEY
   if (!FASHN_API_KEY) throw new Error('FASHN_API_KEY not configured')
 
-  console.log('[try-on] FASHN submit: category=', category)
+  console.log('[try-on] FASHN submit (tryon-max)')
 
   const submitRes = await fetch('https://api.fashn.ai/v1/run', {
     method: 'POST',
@@ -27,9 +18,11 @@ async function runFashn(userImage: string, garmentImage: string, category: strin
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      model_image: userImage,
-      garment_image: garmentImage,
-      category,
+      model_name: 'tryon-max',
+      inputs: {
+        model_image: userImage,
+        product_image: garmentImage,
+      },
     }),
   })
 
@@ -77,18 +70,16 @@ export async function POST(req: Request) {
       )
     }
 
-    const category = fashnCategory(garmentType)
-    console.log(`[try-on] Start: type=${garmentType}, category=${category}`)
+    console.log(`[try-on] Start: type=${garmentType}`)
 
-    const resultUrl = await runFashn(userImage, garmentImage, category)
+    const resultUrl = await runFashn(userImage, garmentImage)
 
     return NextResponse.json({
       success: true,
       data: {
         rendered_image_url: resultUrl,
-        model_used: 'FASHN VTON v1.5',
+        model_used: 'FASHN Try-On Max',
         garment_type: garmentType,
-        category,
       },
     })
   } catch (error: unknown) {
